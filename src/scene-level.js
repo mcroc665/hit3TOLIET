@@ -3,281 +3,307 @@ class SceneLevel extends Phaser.Scene {
         super('SceneLevel');
     }
 
-    /**
-     * INIT - Выполняется ПЕРВЫМ при запуске сцены.
-     * Здесь мы обнуляем все переменные, чтобы старые очки не перешли в новый уровень.
-     */
     init() {
         this.score = 0;
-        this.movesLeft = 0;
         this.selectedTile = null;
-        this.canMove = true; // Блокирует клики, пока идет анимация
-        console.log("[SceneLevel] Данные уровня сброшены.");
+        this.canMove = true;
+        this.levelData = LevelsConfig[0];
+        this.movesLeft = this.levelData.maxMoves;
+        this.gridSize = 8;
+        this.tileSize = 48;
+        this.colors = [0xf94144, 0xf3722c, 0xf9c74f, 0x43aa8b, 0x577590];
     }
 
-    /**
-     * CREATE - Отрисовка уровня.
-     */
     create() {
-        // 1. Запускаем параллельно интерфейс (UI)
         if (!this.scene.isActive('SceneUI')) {
             this.scene.run('SceneUI');
         }
 
-        // 2. Определяем, какой уровень загружать
-        const selectedLevel = PlayerData.currentLevelToPlay || 1;
-        const levelIdx = selectedLevel - 1;
-
-        // Берем данные из нашего конфига (если уровня нет — берем первый)
-        this.currentLevelData = LevelsConfig[levelIdx] || LevelsConfig[0];
-
-        // Устанавливаем лимит ходов из конфига
-        this.movesLeft = this.currentLevelData.maxMoves || 20;
-
-        // 3. Настройки сетки (Масштаб 40px, чтобы всё влезло)
-        this.gridSize = 8;
-        this.tileSize = 40;
         const boardSize = this.gridSize * this.tileSize;
-
-        // Центрируем поле: (Ширина экрана - Ширина поля) / 2
-        this.offsetX = (this.sys.game.config.width - boardSize) / 2;
-        this.offsetY = 120; // Оставляем место сверху
-
-        // Цвета фишек (в будущем заменим на иконки)
-        this.colors = [0xffffff, 0xff0000, 0x00ff00, 0xffff00, 0xff00ff];
-
-        // Создаем пустую матрицу поля
+        this.offsetX = (this.scale.width - boardSize) / 2;
+        this.offsetY = 130;
         this.board = Array.from({ length: this.gridSize }, () => Array(this.gridSize).fill(null));
 
-        // Заполняем поле фишками
-        this.createBoard();
+        this.add.rectangle(this.scale.width / 2, this.offsetY + boardSize / 2, boardSize + 10, boardSize + 10, 0xffffff, 0.08)
+            .setStrokeStyle(3, 0xffffff, 0.2);
 
-        // Обновляем UI через 100мс, чтобы сцена успела прогрузиться
-        this.time.delayedCall(100, () => this.updateUI());
+        this.fillBoardWithoutMatches();
+        this.updateUI();
     }
 
-    /**
-     * Создание начальной сетки фишек
-     */
-    createBoard() {
+    fillBoardWithoutMatches() {
         for (let r = 0; r < this.gridSize; r++) {
             for (let c = 0; c < this.gridSize; c++) {
-                this.spawnTile(r, c);
+                let colorIndex;
+                do {
+                    colorIndex = Phaser.Math.Between(0, this.colors.length - 1);
+                } while (this.wouldCreateMatch(r, c, colorIndex));
+                this.spawnTile(r, c, colorIndex);
+            }
+        }
+
+        if (!this.hasPossibleMoves()) {
+            this.clearBoard();
+            this.fillBoardWithoutMatches();
+        }
+    }
+
+    clearBoard() {
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize; c++) {
+                this.board[r][c]?.visual.destroy();
+                this.board[r][c] = null;
             }
         }
     }
 
-    /**
-     * Создание одной фишки
-     * @param {number} row - ряд
-     * @param {number} col - колонка
-     * @param {boolean} isNew - падает ли она сверху (для анимации)
-     */
-    spawnTile(row, col, isNew = false) {
-        const colorIndex = Math.floor(Math.random() * this.colors.length);
+    wouldCreateMatch(row, col, colorIndex) {
+        if (col >= 2 && this.board[row][col - 1] && this.board[row][col - 2]
+            && this.board[row][col - 1].colorIndex === colorIndex
+            && this.board[row][col - 2].colorIndex === colorIndex) {
+            return true;
+        }
+
+        if (row >= 2 && this.board[row - 1][col] && this.board[row - 2][col]
+            && this.board[row - 1][col].colorIndex === colorIndex
+            && this.board[row - 2][col].colorIndex === colorIndex) {
+            return true;
+        }
+
+        return false;
+    }
+
+    spawnTile(row, col, colorIndex, fromTop = false) {
         const x = this.offsetX + col * this.tileSize + this.tileSize / 2;
-        const targetY = this.offsetY + row * this.tileSize + this.tileSize / 2;
+        const finalY = this.offsetY + row * this.tileSize + this.tileSize / 2;
+        const startY = fromTop ? finalY - this.tileSize * 8 : finalY;
 
-        // Если новая — стартует выше экрана, иначе — сразу на месте
-        const startY = isNew ? targetY - 400 : targetY;
+        const visual = this.add.circle(x, startY, this.tileSize / 2 - 5, this.colors[colorIndex])
+            .setStrokeStyle(2, 0xffffff, 0.4)
+            .setInteractive({ useHandCursor: true });
 
-        const visual = this.add.rectangle(x, startY, this.tileSize - 4, this.tileSize - 4, this.colors[colorIndex]);
-        visual.setInteractive();
-        visual.setDepth(10);
+        const tile = { row, col, colorIndex, visual };
 
-        const tileData = { row, col, colorIndex, visual };
+        visual.on('pointerdown', () => this.handleTileClick(tile));
+        this.board[row][col] = tile;
 
-        // Вешаем событие клика
-        visual.on('pointerdown', () => this.handleTileClick(tileData));
-        this.board[row][col] = tileData;
-
-        // Если фишка новая — запускаем анимацию падения
-        if (isNew) {
-            this.tweens.add({ targets: visual, y: targetY, duration: 300 });
+        if (fromTop) {
+            this.tweens.add({ targets: visual, y: finalY, duration: 220 });
         }
     }
 
-    /**
-     * Обработка клика по фишке
-     */
     async handleTileClick(tile) {
-        if (!this.canMove) return; // Ждем окончания анимаций
+        if (!this.canMove) return;
 
         if (!this.selectedTile) {
-            // ПЕРВЫЙ КЛИК: выбираем фишку
             this.selectedTile = tile;
-            tile.visual.setStrokeStyle(3, 0x000000); // Рисуем рамку
-        } else {
-            // ВТОРОЙ КЛИК: проверяем, можно ли поменять
-            if (Match3Engine.isAdjacent(this.selectedTile, tile)) {
-                this.canMove = false; // Блокируем ввод
-                this.movesLeft--;     // ТРАТИМ ХОД
-
-                this.selectedTile.visual.setStrokeStyle(0); // Убираем рамку
-
-                await this.swapTiles(this.selectedTile, tile);
-                this.handleMatches(); // Ищем совпадения
-            } else {
-                // Если кликнули далеко — перевыбираем фишку
-                this.selectedTile.visual.setStrokeStyle(0);
-                this.selectedTile = tile;
-                tile.visual.setStrokeStyle(3, 0x000000);
-            }
+            tile.visual.setStrokeStyle(5, 0xffffff, 0.95);
+            return;
         }
+
+        const first = this.selectedTile;
+        first.visual.setStrokeStyle(2, 0xffffff, 0.4);
+
+        if (first === tile) {
+            this.selectedTile = null;
+            return;
+        }
+
+        if (!Match3Engine.isAdjacent(first, tile)) {
+            this.selectedTile = tile;
+            tile.visual.setStrokeStyle(5, 0xffffff, 0.95);
+            return;
+        }
+
+        this.selectedTile = null;
+        this.canMove = false;
+        this.movesLeft -= 1;
+        this.updateUI();
+
+        await this.swapTiles(first, tile);
+
+        const hasMatch = Match3Engine.getMatches(this.board, this.gridSize).length > 0;
+
+        if (!hasMatch) {
+            await this.swapTiles(first, tile);
+            this.canMove = true;
+            if (this.movesLeft <= 0) {
+                this.finishLevel(false);
+            }
+            return;
+        }
+
+        await this.resolveMatchesCascade();
+
+        if (this.score >= this.levelData.targetScore) {
+            this.finishLevel(true);
+            return;
+        }
+
+        if (this.movesLeft <= 0) {
+            this.finishLevel(false);
+            return;
+        }
+
+        if (!this.hasPossibleMoves()) {
+            this.shuffleBoard();
+        }
+
+        this.canMove = true;
     }
 
-    /**
-     * Анимация перемещения двух фишек
-     */
-    async swapTiles(tile1, tile2) {
-        const r1 = tile1.row, c1 = tile1.col, r2 = tile2.row, c2 = tile2.col;
+    swapTiles(tileA, tileB) {
+        const { row: r1, col: c1 } = tileA;
+        const { row: r2, col: c2 } = tileB;
 
-        // Меняем местами в логической матрице
-        this.board[r1][c1] = tile2;
-        this.board[r2][c2] = tile1;
+        this.board[r1][c1] = tileB;
+        this.board[r2][c2] = tileA;
+        tileA.row = r2; tileA.col = c2;
+        tileB.row = r1; tileB.col = c1;
 
-        // Обновляем координаты внутри объектов
-        tile1.row = r2; tile1.col = c2;
-        tile2.row = r1; tile2.col = c1;
-
-        // Запускаем визуальное движение
-        return new Promise(resolve => {
+        return new Promise((resolve) => {
             this.tweens.add({
-                targets: tile1.visual,
+                targets: tileA.visual,
                 x: this.offsetX + c2 * this.tileSize + this.tileSize / 2,
                 y: this.offsetY + r2 * this.tileSize + this.tileSize / 2,
-                duration: 200
+                duration: 180
             });
             this.tweens.add({
-                targets: tile2.visual,
+                targets: tileB.visual,
                 x: this.offsetX + c1 * this.tileSize + this.tileSize / 2,
                 y: this.offsetY + r1 * this.tileSize + this.tileSize / 2,
-                duration: 200,
+                duration: 180,
                 onComplete: resolve
             });
         });
     }
 
-    /**
-     * Основная логика поиска и удаления совпадений
-     */
-    async handleMatches() {
-        const matches = Match3Engine.getMatches(this.board, this.gridSize);
+    async resolveMatchesCascade() {
+        while (true) {
+            const matches = Match3Engine.getMatches(this.board, this.gridSize);
+            if (!matches.length) break;
 
-        if (matches.length > 0) {
-            // 1. Начисляем очки
             this.score += matches.length * 10;
             this.updateUI();
 
-            // 2. Удаляем совпавшие фишки
-            matches.forEach(m => {
-                const tile = this.board[m.row][m.col];
-                if (tile) {
-                    tile.visual.destroy();
-                    this.board[m.row][m.col] = null;
-                }
-            });
+            for (const match of matches) {
+                const tile = this.board[match.row][match.col];
+                if (!tile) continue;
+                this.board[match.row][match.col] = null;
+                this.tweens.add({ targets: tile.visual, alpha: 0, scale: 0.3, duration: 140, onComplete: () => tile.visual.destroy() });
+            }
 
-            // 3. Ждем немного и включаем гравитацию
+            await this.wait(160);
             await this.applyGravity();
-
-            // 4. Проверяем: не набрали ли мы нужное количество очков?
-            if (this.score >= this.currentLevelData.targetScore) {
-                this.finishLevel(true);
-            } else {
-                // Ищем новые совпадения (каскадная реакция)
-                this.handleMatches();
-            }
-        } else {
-            // Совпадений нет — проверяем, не закончились ли ходы
-            if (this.movesLeft <= 0) {
-                this.finishLevel(false);
-            } else {
-                this.canMove = true; // Возвращаем управление игроку
-                this.selectedTile = null;
-            }
+            await this.wait(130);
         }
     }
 
-    /**
-     * Гравитация: заставляет фишки падать вниз в пустые места
-     */
     async applyGravity() {
         for (let c = 0; c < this.gridSize; c++) {
-            let emptySpaces = 0;
+            let empty = 0;
             for (let r = this.gridSize - 1; r >= 0; r--) {
-                if (this.board[r][c] === null) {
-                    emptySpaces++;
-                } else if (emptySpaces > 0) {
-                    const tile = this.board[r][c];
-                    this.board[r + emptySpaces][c] = tile;
+                const tile = this.board[r][c];
+                if (!tile) {
+                    empty += 1;
+                    continue;
+                }
+
+                if (empty > 0) {
+                    this.board[r + empty][c] = tile;
                     this.board[r][c] = null;
-                    tile.row = r + emptySpaces;
+                    tile.row = r + empty;
                     this.tweens.add({
                         targets: tile.visual,
                         y: this.offsetY + tile.row * this.tileSize + this.tileSize / 2,
-                        duration: 300
+                        duration: 180
                     });
                 }
             }
-            // Создаем новые фишки сверху вместо улетевших
-            for (let i = 0; i < emptySpaces; i++) this.spawnTile(i, c, true);
+
+            for (let i = 0; i < empty; i++) {
+                const row = i;
+                const colorIndex = Phaser.Math.Between(0, this.colors.length - 1);
+                this.spawnTile(row, c, colorIndex, true);
+            }
         }
-        await new Promise(r => setTimeout(r, 400));
+
+        await this.wait(230);
     }
 
-    /**
-     * Завершение уровня (Победа или Проигрыш)
-     */
+    hasPossibleMoves() {
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize; c++) {
+                if (c + 1 < this.gridSize && this.checkPotentialSwap(r, c, r, c + 1)) return true;
+                if (r + 1 < this.gridSize && this.checkPotentialSwap(r, c, r + 1, c)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    checkPotentialSwap(r1, c1, r2, c2) {
+        const a = this.board[r1][c1];
+        const b = this.board[r2][c2];
+        if (!a || !b) return false;
+
+        this.board[r1][c1] = b;
+        this.board[r2][c2] = a;
+        const hasMatch = Match3Engine.getMatches(this.board, this.gridSize).length > 0;
+        this.board[r1][c1] = a;
+        this.board[r2][c2] = b;
+
+        return hasMatch;
+    }
+
+    shuffleBoard() {
+        const tiles = [];
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize; c++) {
+                tiles.push(this.board[r][c]);
+            }
+        }
+
+        Phaser.Utils.Array.Shuffle(tiles);
+
+        let i = 0;
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize; c++) {
+                const tile = tiles[i++];
+                tile.row = r;
+                tile.col = c;
+                this.board[r][c] = tile;
+                this.tweens.add({
+                    targets: tile.visual,
+                    x: this.offsetX + c * this.tileSize + this.tileSize / 2,
+                    y: this.offsetY + r * this.tileSize + this.tileSize / 2,
+                    duration: 240
+                });
+            }
+        }
+    }
+
     finishLevel(isWin) {
+        this.canMove = false;
+
         if (isWin) {
-            console.log("[Level] Победа!");
-
-            // Если это босс — добавляем в коллекцию
-            if (this.currentLevelData.isBoss) {
-                PlayerData.addBossToCollection(this.currentLevelData.bossId);
-            }
-
-            // Начисляем награды
-            PlayerData.addRewards(this.currentLevelData.reward.money, this.currentLevelData.reward.xp);
-
-            // Если прошли текущий максимальный уровень — открываем следующий
-            if (PlayerData.currentLevelToPlay >= PlayerData.unlockedLevels) {
-                PlayerData.unlockedLevels++;
-            }
+            PlayerData.addRewards(this.levelData.reward.money, this.levelData.reward.xp);
+            PlayerData.unlockedLevels = Math.max(PlayerData.unlockedLevels, 1);
             PlayerData.save();
-
-            // Показываем окно победы со звездами
-            const stars = this.calculateStars();
-            const ui = this.scene.get('SceneUI');
-            if (ui) ui.showWinScreen(this.currentLevelData.reward, stars);
-
-        } else {
-            console.log("[Level] Проигрыш (кончились ходы)");
-            alert("Ходы закончились! Попробуйте снова.");
-            this.scene.start('SceneMenu');
         }
-    }
 
-    /**
-     * Расчет количества звезд на основе очков
-     */
-    calculateStars() {
-        const s = this.currentLevelData.stars;
-        if (this.score >= s[2]) return 3;
-        if (this.score >= s[1]) return 2;
-        if (this.score >= s[0]) return 1;
-        return 0;
-    }
-
-    /**
-     * Обновление текста и полоски в UI
-     */
-    updateUI() {
         const ui = this.scene.get('SceneUI');
-        if (ui && ui.updateUI) {
-            // Передаем очки, цель и оставшиеся ходы
-            ui.updateUI(this.score, this.currentLevelData.targetScore, this.movesLeft);
-        }
+        ui?.showEndScreen(isWin, this.levelData, this.score, () => {
+            this.scene.stop('SceneUI');
+            this.scene.restart();
+        });
+    }
+
+    updateUI() {
+        this.scene.get('SceneUI')?.updateUI(this.score, this.levelData.targetScore, this.movesLeft);
+    }
+
+    wait(ms) {
+        return new Promise((resolve) => this.time.delayedCall(ms, resolve));
     }
 }

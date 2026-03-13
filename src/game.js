@@ -1,11 +1,14 @@
 const config = {
     type: Phaser.AUTO,
+    parent: 'game-container',
     width: 450,
     height: 800,
-    parent: 'game-container',
-    backgroundColor: '#3498db',
-    // Обязательно добавь SceneMenu сюда:
-    scene: [SceneMenu, SceneLevel, SceneUI]
+    backgroundColor: '#1f2a3d',
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH
+    },
+    scene: [SceneLevel, SceneUI]
 };
 
-const game = new Phaser.Game(config);
+new Phaser.Game(config);

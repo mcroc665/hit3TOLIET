@@ -4,126 +4,71 @@ class SceneUI extends Phaser.Scene {
     }
 
     create() {
-        console.log("[UI] Отрисовка обновленного интерфейса...");
+        const width = this.scale.width;
 
-        // 1. ПАРАМЕТРЫ ПАНЕЛИ
-        // Размещаем панель внизу (высота экрана 800, панель на 660)
-        const panelY = 660;
+        this.add.rectangle(0, 0, width, 100, 0x000000, 0.35).setOrigin(0).setDepth(1000);
+        this.scoreText = this.add.text(20, 16, 'Очки: 0/0', {
+            fontSize: '28px',
+            color: '#ffffff',
+            fontStyle: 'bold'
+        }).setDepth(1001);
 
-        // Черная подложка (полупрозрачная)
-        this.add.rectangle(0, panelY, 450, 140, 0x000000, 0.8).setOrigin(0).setDepth(10000);
+        this.movesText = this.add.text(20, 54, 'Ходы: 0', {
+            fontSize: '24px',
+            color: '#ffd166',
+            fontStyle: 'bold'
+        }).setDepth(1001);
 
-        // Зеленая декоративная рамка
-        const border = this.add.graphics();
-        border.lineStyle(4, 0x2ecc71);
-        border.strokeRect(5, panelY + 5, 440, 130);
-        border.setDepth(10001);
-
-        // 2. ТЕКСТЫ ИНФОРМАЦИИ
-        // Очки игрока (крупно)
-        this.scoreText = this.add.text(20, panelY + 20, 'ОЧКИ: 0/0', {
-            fontSize: '24px', fill: '#ffffff', fontStyle: 'bold'
-        }).setDepth(10002);
-
-        // Оставшиеся ходы (выделим красным, если мало)
-        this.movesText = this.add.text(20, panelY + 55, 'ХОДЫ: 0', {
-            fontSize: '24px', fill: '#ff4757', fontStyle: 'bold'
-        }).setDepth(10002);
-
-        // Статистика (Деньги и Опыт)
-        this.statsText = this.add.text(20, panelY + 95, '', {
-            fontSize: '16px', fill: '#ffd700', fontStyle: 'bold'
-        }).setDepth(10002);
-
-        // 3. ШКАЛА ПРОГРЕССА (ЦЕЛЬ)
-        this.add.text(250, panelY + 25, 'ПРОГРЕСС УРОВНЯ:', { fontSize: '12px', fill: '#ffffff' }).setDepth(10002);
-
-        // Фон шкалы (серый)
-        this.barBg = this.add.rectangle(250, panelY + 45, 180, 25, 0x333333).setOrigin(0).setDepth(10002);
-        // Сама полоска (зеленая)
-        this.barFill = this.add.rectangle(250, panelY + 45, 0, 25, 0x2ecc71).setOrigin(0).setDepth(10003);
-
-        // Обновляем данные из PlayerData сразу при старте
-        this.refreshStats();
+        this.tipText = this.add.text(width - 20, 30, 'Тап/клик + соседняя фишка', {
+            fontSize: '16px',
+            color: '#cde7ff',
+            align: 'right'
+        }).setOrigin(1, 0).setDepth(1001);
     }
 
-    /**
-     * Метод обновления текста денег и опыта
-     */
-    refreshStats() {
-        if (this.statsText) {
-            this.statsText.setText(`💰 ${PlayerData.money} | ⭐ ОПЫТ: ${PlayerData.xp}`);
-        }
+    updateUI(score, targetScore, movesLeft) {
+        this.scoreText?.setText(`Очки: ${score}/${targetScore}`);
+        this.movesText?.setText(`Ходы: ${movesLeft}`);
+        this.movesText?.setColor(movesLeft <= 5 ? '#ff6b6b' : '#ffd166');
     }
 
-    /**
-     * Основной метод обновления данных, который вызывает SceneLevel
-     */
-    updateUI(currentScore, targetScore, movesLeft) {
-        // Обновляем текст очков
-        if (this.scoreText) {
-            this.scoreText.setText(`ОЧКИ: ${currentScore}/${targetScore}`);
-        }
+    showEndScreen(isWin, levelData, score, onRestart) {
+        const width = this.scale.width;
+        const height = this.scale.height;
 
-        // Обновляем текст ходов
-        if (this.movesText) {
-            this.movesText.setText(`ХОДЫ: ${movesLeft}`);
-            // Если осталось меньше 5 ходов — текст мигает или краснеет (можно добавить позже)
-        }
+        this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.72).setDepth(2000);
 
-        // Двигаем полоску прогресса
-        if (this.barFill) {
-            const progress = Math.min(currentScore / targetScore, 1);
-            this.barFill.width = 180 * progress;
-        }
+        const title = isWin ? 'Уровень пройден!' : 'Ходы закончились';
+        const subtitle = isWin
+            ? `Награда: +${levelData.reward.money} золота, +${levelData.reward.xp} XP`
+            : 'Попробуйте ещё раз';
 
-        this.refreshStats();
-    }
+        this.add.text(width / 2, height / 2 - 100, title, {
+            fontSize: '42px',
+            color: isWin ? '#7bed9f' : '#ff6b6b',
+            fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(2001);
 
-    /**
-     * Экран ПОБЕДЫ
-     */
-    showWinScreen(reward, stars) {
-        // Темный фон на весь экран
-        const overlay = this.add.rectangle(225, 400, 450, 800, 0x000000, 0.85).setDepth(20000);
+        this.add.text(width / 2, height / 2 - 20, `Счёт: ${score}`, {
+            fontSize: '30px',
+            color: '#ffffff'
+        }).setOrigin(0.5).setDepth(2001);
 
-        // Рисуем звезды (текстом для простоты)
-        let starIcons = "";
-        for (let i = 0; i < 3; i++) {
-            starIcons += (i < stars) ? "⭐" : "🌑"; // Закрашенная или пустая звезда
-        }
+        this.add.text(width / 2, height / 2 + 30, subtitle, {
+            fontSize: '22px',
+            color: '#ffffff',
+            align: 'center'
+        }).setOrigin(0.5).setDepth(2001);
 
-        this.add.text(225, 250, starIcons, { fontSize: '64px' }).setOrigin(0.5).setDepth(20001);
+        const btn = this.add.rectangle(width / 2, height / 2 + 120, 250, 70, 0x2ed573)
+            .setInteractive()
+            .setDepth(2001);
+        this.add.text(width / 2, height / 2 + 120, 'Переиграть', {
+            fontSize: '30px',
+            color: '#102027',
+            fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(2002);
 
-        this.add.text(225, 350, 'УРОВЕНЬ ПРОЙДЕН!', {
-            fontSize: '36px', fill: '#2ecc71', fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(20001);
-
-        // Текст награды
-        const rewardMsg = `НАГРАДА:\n+${reward.money} Золота\n+${reward.xp} Опыта`;
-        this.add.text(225, 460, rewardMsg, {
-            fontSize: '24px', fill: '#ffffff', align: 'center'
-        }).setOrigin(0.5).setDepth(20001);
-
-        // Кнопка ДАЛЕЕ (в меню)
-        const btn = this.add.rectangle(225, 600, 220, 70, 0x2ecc71).setInteractive().setDepth(20001);
-        const btnText = this.add.text(225, 600, 'В МЕНЮ', {
-            fontSize: '28px', fill: '#000', fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(20002);
-
-        // Логика кнопки
-        btn.on('pointerdown', () => {
-            this.scene.stop('SceneLevel');
-            this.scene.start('SceneMenu');
-        });
-
-        // Анимация появления кнопки (легкая пульсация)
-        this.tweens.add({
-            targets: [btn, btnText],
-            scale: 1.05,
-            duration: 800,
-            yoyo: true,
-            repeat: -1
-        });
+        btn.on('pointerdown', onRestart);
     }
 }
